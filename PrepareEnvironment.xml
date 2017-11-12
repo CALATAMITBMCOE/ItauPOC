@@ -1,0 +1,225 @@
+<gel:script
+ xmlns:core="jelly:core"
+    xmlns:gel="jelly:com.niku.union.gel.GELTagLibrary"
+    xmlns:soap="jelly:com.niku.union.gel.SOAPTagLibrary"
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:soap-env="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:sql="jelly:sql"
+    xmlns:xog="http://www.niku.com/xog"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:file="jelly:com.niku.union.gel.FileTagLibrary"
+    xmlns:util="jelly:util"
+    xmlns:q="http://www.niku.com/xog/Query">
+
+   	<!--============================================================-->
+	<!-- Create environment variables and Login to XOG 				-->
+   	<!--============================================================-->
+
+	<core:set var="DebugLevel">0</core:set>
+
+	<core:if test="${DebugLevel &gt; 0}">
+		<gel:log level="debug" message="Start Script"/>
+	</core:if>
+
+	<gel:setDataSource dbId="Niku"/>
+
+    <gel:parameter default="xog" var="XOGUsername"/>
+    <gel:parameter default="gox" var="XOGPassword"/>
+
+	<core:invokeStatic var="config" className="com.niku.union.config.ConfigurationManager" method="getInstance"/>
+	<core:set var="vInstallDirInput" value="${config.getProperties().getDirectories().getInstallDir()}"/>
+	<core:if test="${DebugLevel &gt; 1}">
+		<gel:log level="debug" message="vInstallDirInput :  ${vInstallDirInput}"/>
+	</core:if>
+
+	<core:set var="InputString" value="${vInstallDirInput}"/>
+
+	<core:invoke var="vInputStringCorrect" on="${InputString}" method="replaceAll">
+		<core:arg type="java.lang.String" value="\\\\"/>
+		<core:arg type="java.lang.String" value="\\"/>
+	</core:invoke>
+
+	<core:invoke var="vInstallDir" on="${vInputStringCorrect}" method="replace">
+		<core:arg type="char" value="\"/>
+		<core:arg type="char" value="/"/>
+	</core:invoke>
+
+	<core:if test="${DebugLevel &gt; 1}">
+		<gel:log level="debug" message="vInstallDir :  ${vInstallDir}"/>
+	</core:if>
+
+	<core:set var="XOGlogFolder" value="${vInstallDir}/logs"/>
+	<core:set var="XOGwebFolder" value="${vInstallDir}/webroot/strat_logs"/>
+	<!-- Then create the new folder mkdirs will create all intermediate parent folders  -->
+	<util:file name="${XOGwebFolder}" var="logsfoldervar" />
+	<core:set var="CreateLogsDirDone" value="${logsfoldervar.mkdirs()}" />
+	<core:if test="${DebugLevel &gt; 1}">
+		<gel:log level="debug" message="CreateLogsDirDone for ${XOGwebFolder}: ${CreateLogsDirDone}"/>
+	</core:if>				
+	
+	<core:set var="schedulerUrl" value="${config.getProperties().getWebServer().getSchedulerUrl()}"/>
+
+	<core:if test="${DebugLevel &gt; 1}">
+		<gel:log level="debug" message="schedulerUrl: ${schedulerUrl}"/>
+	</core:if>
+
+	<!-- Gets ID from Instance 0-->
+    <core:set var="WebServerid" value="${config.getProperties().getWebServer().getWebServerInstance(0).getId()}"/>
+	<!-- Tests if Instance 0 is app - then gets instance 0 data -->
+	<core:if test="${WebServerid == 'app'}">
+		<core:set var="SSLEnabled" value="${config.getProperties().getWebServer().getWebServerInstance(0).getEnableSSLPort()}"/>
+		<core:if test="${SSLEnabled == 'false'}">
+			<core:set var="entryUrl" value="${config.getProperties().getWebServer().getWebServerInstance(0).getEntryUrl()}"/>
+			<core:set var="entryUrlPort" value="${config.getProperties().getWebServer().getWebServerInstance(0).getPort()}"/>
+		</core:if>
+		<core:if test="${SSLEnabled == 'true'}">
+			<core:set var="entryUrl" value="${config.getProperties().getWebServer().getWebServerInstance(0).getSslEntryUrl()}"/>
+		</core:if>
+	</core:if>
+	<!-- Tests if Instance 0 is not app - then reads instance 1 -->
+	<core:if test="${WebServerid != 'app'}">
+		<core:set var="WebServerid" value="${config.getProperties().getWebServer().getWebServerInstance(1).getId()}"/>
+		<!-- Tests if Instance 1 is app - then gets instance 1 data -->
+		<core:if test="${WebServerid == 'app'}">
+			<core:set var="SSLEnabled" value="${config.getProperties().getWebServer().getWebServerInstance(1).getEnableSSLPort()}"/>
+			<core:if test="${SSLEnabled == 'false'}">
+				<core:set var="entryUrl" value="${config.getProperties().getWebServer().getWebServerInstance(1).getEntryUrl()}"/>
+				<core:set var="entryUrlPort" value="${config.getProperties().getWebServer().getWebServerInstance(1).getPort()}"/>
+			</core:if>
+			<core:if test="${SSLEnabled == 'true'}">
+				<core:set var="entryUrl" value="${config.getProperties().getWebServer().getWebServerInstance(1).getSslEntryUrl()}"/>
+			</core:if>
+		</core:if>
+
+		<!-- Tests if Instance 1 is not app - then reads instance 2 -->
+		<core:if test="${WebServerid != 'app'}">
+			<core:set var="WebServerid" value="${config.getProperties().getWebServer().getWebServerInstance(2).getId()}"/>
+			<core:if test="${WebServerid == 'app'}">
+				<core:set var="SSLEnabled" value="${config.getProperties().getWebServer().getWebServerInstance(2).getEnableSSLPort()}"/>
+				<core:if test="${SSLEnabled == 'false'}">
+					<core:set var="entryUrl" value="${config.getProperties().getWebServer().getWebServerInstance(2).getEntryUrl()}"/>
+					<core:set var="entryUrlPort" value="${config.getProperties().getWebServer().getWebServerInstance(2).getPort()}"/>
+				</core:if>
+				<core:if test="${SSLEnabled == 'true'}">
+					<core:set var="entryUrl" value="${config.getProperties().getWebServer().getWebServerInstance(2).getSslEntryUrl()}"/>
+				</core:if>
+			</core:if>
+			<core:if test="${WebServerid != 'app'}">
+				<gel:log level="ERROR" message="WebServerid	APP not Found!"/>
+			</core:if>
+		</core:if>
+	</core:if>
+
+	<!-- This should work with NA Servers where SSL is implemented in Apache and CA PPM is unaware of it -->
+	<core:invoke var="vProtocol" on="${entryUrl}" method="substring">
+		<core:arg type="int" value="0"/>
+		<core:arg type="int" value="5"/>
+	</core:invoke>
+	<core:if test="${vProtocol == 'https'}">
+		<core:set var="SSLEnabled" value="true"/>
+	</core:if>
+		
+	<core:set var="XOGwebPath" value="${entryUrl}/niku/strat_logs"/>
+	<core:if test="${DebugLevel &gt; 1}">
+		<gel:log level="debug" message="WebServerid	: ${WebServerid}"/>
+		<gel:log level="debug" message="entryUrl	: ${entryUrl}"/>
+		<gel:log level="debug" message="entryUrlPort: ${entryUrlPort}"/>
+	</core:if>
+
+	<!-- Not sure whether I should use entryUrl -->
+	<core:set var="XOGURL" value="${entryUrl}:${entryUrlPort}"/>
+	<core:if test="${SSLEnabled == 'true'}">
+		<core:set var="XOGURL" value="${entryUrl}"/>
+	</core:if>
+	<core:if test="${DebugLevel &gt; 0}">
+		<gel:log level="debug" message="XOGURL: ${XOGURL}"/>
+		<gel:log level="debug" message="XOGlogFolder: ${XOGlogFolder}"/>
+	</core:if>
+
+	<!-- Get Database Vendor -->
+    <core:set var="dbVendor" value="${config.getProperties().getDatabaseServer().getVendor().toString()}"/>
+	<core:if test="${DebugLevel &gt; 0}">
+		<gel:log level="debug" message="DBVendor: ${dbVendor}"/>
+	</core:if>
+	
+	<!-- Get Database Owner -->
+    <core:set var="dbId" value="${config.getProperties().getDatabase(0).getId().toString()}"/>
+	<!-- If DB(0) is DWH, get data from DB(1) -->
+	<core:if test="${dbId == 'DWH'}">
+		<core:set var="dbOwner" value="${config.getProperties().getDatabase(1).getUsername().toString()}"/>
+	</core:if>
+
+	<!-- If DB(0) is not DWH, get data from DB(0) -->
+	<core:if test="${dbId != 'DWH'}">
+		<core:set var="dbOwner" value="${config.getProperties().getDatabase(0).getUsername().toString()}"/>
+	</core:if>
+	<core:if test="${DebugLevel &gt; 0}">
+		<gel:log level="debug" message="DBOwner: ${dbOwner}"/>
+	</core:if>
+	
+    <!-- Log in to XOG-->
+    <soap:invoke endpoint="${XOGURL}/niku/xog" var="auth">
+        <soap:message>
+            <soapenv:Envelope
+                xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xog="http://www.niku.com/xog">
+                <soapenv:Header/>
+                <soapenv:Body>
+                    <xog:Login>
+                        <xog:Username>${XOGUsername}</xog:Username>
+                        <xog:Password>${XOGPassword}</xog:Password>
+                    </xog:Login>
+                </soapenv:Body>
+            </soapenv:Envelope>
+        </soap:message>
+    </soap:invoke>
+    <gel:set asString="true"
+        select="$auth/soapenv:Envelope/soapenv:Body/xog:SessionID/text()" var="sessionID"/>
+    <core:choose>
+	<core:if test="${DebugLevel &gt; 0}">
+		<gel:serialize var="${auth}" fileName="${XOGlogFolder}/auth.xml"/>
+	</core:if>
+        <!-- Check XOG sessionID -->
+        <core:when test="${sessionID == null}">
+            <gel:log category="XOG" level="ERROR">Couldn't Log in to XOG. Please verify the username/password.</gel:log>
+        </core:when>
+        <core:otherwise>
+			<core:if test="${DebugLevel &gt; 1}">
+				<gel:log level="debug" message="[XOG] XOG Login Successful. ${sessionID}."/>
+			</core:if>
+			<gel:persist var="XOGURL" value="${XOGURL}" scope="INSTANCE"/>
+			<gel:persist var="XOGlogFolder" value="${XOGlogFolder}" scope="INSTANCE"/>
+			<gel:persist var="XOGwebFolder" value="${XOGwebFolder}" scope="INSTANCE"/>
+			<gel:persist var="XOGwebPath" value="${XOGwebPath}" scope="INSTANCE"/>
+			<gel:persist var="sessionID" value="${sessionID}" scope="INSTANCE"/>
+			<gel:persist var="DebugLevel" value="${DebugLevel}" scope="INSTANCE"/>
+			<gel:persist var="dbVendor" value="${dbVendor}" scope="INSTANCE"/>
+			<gel:persist var="dbOwner" value="${dbOwner}" scope="INSTANCE"/>
+
+			<!-- SQL Server Compatibility-->
+			<core:set var="isNullFunction" value="ISNULL"/>
+			<core:if test="${dbVendor=='oracle'}">
+				<core:set var="isNullFunction" value="NVL"/>
+			</core:if>
+			<gel:persist var="isNullFunction" value="${isNullFunction}" scope="INSTANCE"/>
+			
+			<core:set var="currentDateFunction" value="GETDATE()"/>
+			<core:if test="${dbVendor=='oracle'}">
+				<core:set var="currentDateFunction" value="SYSDATE"/>
+			</core:if>
+			<gel:persist var="currentDateFunction" value="${currentDateFunction}" scope="INSTANCE"/>
+			
+			<core:set var="lengthFunction" value="LEN"/>
+			<core:if test="${dbVendor=='oracle'}">
+				<core:set var="lengthFunction" value="LENGTH"/>
+			</core:if>
+			<gel:persist var="lengthFunction" value="${lengthFunction}" scope="INSTANCE"/>
+			
+			<core:set var="subStringFunction" value="SUBSTRING"/>
+			<core:if test="${dbVendor=='oracle'}">
+				<core:set var="subStringFunction" value="SUBSTR"/>
+			</core:if>
+			<gel:persist var="subStringFunction" value="${subStringFunction}" scope="INSTANCE"/>
+		</core:otherwise>
+    </core:choose>
+</gel:script>

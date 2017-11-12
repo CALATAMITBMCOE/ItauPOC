@@ -1,0 +1,65 @@
+<gel:script xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:core="jelly:core"
+    xmlns:file="jelly:com.niku.union.gel.FileTagLibrary"
+    xmlns:gel="jelly:com.niku.union.gel.GELTagLibrary"
+    xmlns:soap="jelly:com.niku.union.gel.SOAPTagLibrary"
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:sql="jelly:sql" xmlns:xog="http://www.niku.com/xog"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+
+	<core:set var="DebugLevel" value="1"/>
+	<core:if test="${DebugLevel &gt; 0}">
+		<gel:log level="debug" message="Start Script"/>
+		<gel:log level="debug" message=">>DebugLevel: ${DebugLevel}"/>
+	</core:if>
+
+    <gel:setDataSource dbId="niku"/>
+	<sql:update escapeText="false" var="updateperiods">
+		UPDATE BIZ_COM_PERIODS set PERIOD_NAME = P_YEAR, P_DESCRIPTION = P_YEAR
+		WHERE PERIOD_TYPE = 'ANNUALLY'
+	</sql:update>
+
+	<sql:update escapeText="false" var="updateperiods">
+		UPDATE CMN_CAPTIONS_NLS set NAME = (select P.P_YEAR from BIZ_COM_PERIODS P WHERE P.ID = CMN_CAPTIONS_NLS.PK_ID), DESCRIPTION = (select P.P_YEAR from BIZ_COM_PERIODS P WHERE P.ID = PK_ID)
+		WHERE PK_ID in (select ID from BIZ_COM_PERIODS WHERE PERIOD_TYPE = 'ANNUALLY')
+		AND TABLE_NAME = 'BIZ_COM_PERIODS'
+		AND LANGUAGE_CODE = 'pt'
+	</sql:update>
+
+	<sql:update escapeText="false" var="updateperiods">
+		UPDATE BIZ_COM_PERIODS set PERIOD_NAME = P_YEAR || '-T'|| (EXTRACT(month FROM START_DATE)+2)/3, P_DESCRIPTION = P_YEAR || '-T'|| (EXTRACT(month FROM START_DATE)+2)/3
+		WHERE PERIOD_TYPE = 'QUARTERLY'
+	</sql:update>
+
+	<sql:update escapeText="false" var="updateperiods">
+		UPDATE CMN_CAPTIONS_NLS set NAME = (select P.P_YEAR || '-T'|| (EXTRACT(month FROM P.START_DATE)+2)/3 from BIZ_COM_PERIODS P WHERE P.ID = CMN_CAPTIONS_NLS.PK_ID), DESCRIPTION = (select P.P_YEAR || '-T'|| (EXTRACT(month FROM P.START_DATE)+2)/3 from BIZ_COM_PERIODS P WHERE P.ID = PK_ID)
+		WHERE PK_ID in (select ID from BIZ_COM_PERIODS WHERE PERIOD_TYPE = 'QUARTERLY')
+		AND TABLE_NAME = 'BIZ_COM_PERIODS'
+		AND LANGUAGE_CODE = 'pt'
+	</sql:update>
+
+	<sql:update escapeText="false" var="updateperiods">
+		UPDATE BIZ_COM_PERIODS set PERIOD_NAME = P_YEAR || '-'|| LPAD(EXTRACT(month FROM START_DATE), 2, '0') , P_DESCRIPTION = P_YEAR || '-'|| LPAD(EXTRACT(month FROM START_DATE), 2, '0') 
+		WHERE PERIOD_TYPE = 'MONTHLY'
+	</sql:update>
+
+	<sql:update escapeText="false" var="updateperiods">
+		UPDATE CMN_CAPTIONS_NLS set NAME = (select P.P_YEAR || '-'|| LPAD(EXTRACT(month FROM START_DATE), 2, '0')  from BIZ_COM_PERIODS P WHERE P.ID = CMN_CAPTIONS_NLS.PK_ID), DESCRIPTION = (select P.P_YEAR || '-'|| LPAD(EXTRACT(month FROM START_DATE), 2, '0') from BIZ_COM_PERIODS P WHERE P.ID = PK_ID)
+		WHERE PK_ID in (select ID from BIZ_COM_PERIODS WHERE PERIOD_TYPE = 'MONTHLY')
+		AND TABLE_NAME = 'BIZ_COM_PERIODS'
+		AND LANGUAGE_CODE = 'pt'
+	</sql:update>
+
+	<sql:update escapeText="false" var="updateperiods">
+		UPDATE BIZ_COM_PERIODS set PERIOD_NAME = P_YEAR || '-'|| LPAD(EXTRACT(month FROM START_DATE), 2, '0') , P_DESCRIPTION = P_YEAR || '-'|| LPAD(EXTRACT(month FROM START_DATE), 2, '0') 
+		WHERE PERIOD_TYPE = 'WEEKLY'
+	</sql:update>
+
+	<sql:update escapeText="false" var="updateperiods">
+		UPDATE CMN_CAPTIONS_NLS set NAME = (select P.P_YEAR || '-'|| LPAD(EXTRACT(month FROM P.START_DATE), 2, '0')|| '-'|| LPAD(EXTRACT(day FROM P.START_DATE), 2, '0')  from BIZ_COM_PERIODS P WHERE P.ID = CMN_CAPTIONS_NLS.PK_ID), DESCRIPTION = (select P.P_YEAR || '-'|| LPAD(EXTRACT(month FROM P.START_DATE), 2, '0')|| '-'|| LPAD(EXTRACT(day FROM P.START_DATE), 2, '0') from BIZ_COM_PERIODS P WHERE P.ID = PK_ID)
+		WHERE PK_ID in (select ID from BIZ_COM_PERIODS WHERE PERIOD_TYPE = 'WEEKLY')
+		AND TABLE_NAME = 'BIZ_COM_PERIODS'
+		AND LANGUAGE_CODE = 'pt'
+	</sql:update>
+</gel:script>

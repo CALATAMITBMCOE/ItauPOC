@@ -1,0 +1,196 @@
+<gel:script xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:core="jelly:core"
+    xmlns:file="jelly:com.niku.union.gel.FileTagLibrary"
+    xmlns:gel="jelly:com.niku.union.gel.GELTagLibrary"
+    xmlns:soap="jelly:com.niku.union.gel.SOAPTagLibrary"
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:sql="jelly:sql" xmlns:xog="http://www.niku.com/xog"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+
+	<core:set value="${gel_objectInstanceId}" var="vProject_Intl"/>
+	
+	<core:if test="${DebugLevel &gt; 0}">
+		<gel:log level="debug" message="Start Script"/>
+		<gel:log level="debug" message=">>Cycle ID            : ${vProject_Intl}"/> 
+		<gel:log level="debug" message=">>Persisted XOG URL   : ${XOGURL}"/> 
+		<gel:log level="debug" message=">>Persisted LOG Folder: ${XOGlogFolder}"/> 
+		<gel:log level="debug" message=">>Persisted WEB Folder: ${XOGwebFolder}"/> 
+		<gel:log level="debug" message=">>Persisted SessionID : ${sessionID}"/> 
+		<gel:log level="debug" message=">>Persisted DebugLevel: ${DebugLevel}"/> 
+		<gel:log level="debug" message=">>Persisted dbVendor  : ${dbVendor}"/>
+		<gel:log level="debug" message=">>Persisted dbOwner   : ${dbOwner}"/> 
+	</core:if>
+
+    <gel:setDataSource dbId="niku"/>
+
+    <!-- Reading Rateio Data-->
+    <sql:query escapeText="false" var="vRateio">
+		Select RAT.CODE, IDEA.CODE, PRJ.CODE, OPRJ.PARTITION_CODE
+		FROM INV_INVESTMENTS PRJ INNER JOIN ODF_CA_PROJECT OPRJ ON OPRJ.ID = PRJ.ID INNER JOIN INV_INVESTMENTS IDEA ON PRJ.IDEA_ID = IDEA.ID INNER JOIN ODF_CA_ITAU_REGRA_RATEIO RAT ON RAT.ODF_PARENT_ID = IDEA.ID
+		WHERE PRJ.ID = ${vProject_Intl}
+	</sql:query>
+    <core:forEach items="${vRateio.rowsByIndex}" var="row">
+        <core:set var="vRate_Code">${row[0]}</core:set>
+        <core:set var="vIdea_Code">${row[1]}</core:set>
+        <core:set var="vProj_Code">${row[2]}</core:set>
+        <core:set var="vProj_Part">${row[3]}</core:set>
+		<core:if test="${DebugLevel &gt; 0}">
+			<gel:log level="debug" message="Found Rateio: ${vRate_Code} for Idea ${vIdea_Code} related to Project ${vProj_Code}."/> 
+		</core:if>
+
+		<gel:parse var="v_rateio_read">
+			<NikuDataBus xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../xsd/nikuxog_read.xsd">
+			  <Header version="8.0" action="read" objectType="customObjectInstance" externalSource="NIKU"/>
+			  <CustomObjectInstanceQuery>
+				<Filter name="objectCode" criteria="EQUALS">itau_regra_rateio</Filter>
+				<Filter name="instanceCode" criteria="EQUALS">${vRate_Code}</Filter>
+			  </CustomObjectInstanceQuery>
+			</NikuDataBus>
+		</gel:parse>
+
+		<core:if test="${DebugLevel &gt; 1}">
+			<gel:serialize var="${v_rateio_read}" fileName="${XOGwebFolder}/XOGREAD_Rateio_${vRate_Code}.xml"/>
+			<gel:log level="debug" message="XOG Read can be found at: ${XOGwebPath}/XOGREAD_Rateio_${vRate_Code}.xml"/> 
+		</core:if>
+
+		<!-- Calling XOG-->
+		<core:catch var="v_xog_exception">
+			<soap:invoke endpoint="${XOGURL}/niku/xog" var="runresult">
+				<soap:message>
+					<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xog="http://www.niku.com/xog">
+						<soapenv:Header>
+							<xog:Auth>
+								<xog:SessionID>${sessionID}</xog:SessionID>
+							</xog:Auth>	
+						</soapenv:Header>
+						<soapenv:Body>
+							<gel:include select="$v_rateio_read/NikuDataBus"/>
+						</soapenv:Body>
+					</soapenv:Envelope>
+				</soap:message>
+			</soap:invoke>
+		</core:catch>
+
+		<core:if test="${v_xog_exception != null}">
+			<gel:log level="warning" message="Caught Exception: ${v_xog_exception}."/>
+			<core:set var="exitClause" value="1"/>
+		</core:if>
+  
+		<core:if test="${v_xog_exception == null}">
+			<core:if test="${DebugLevel &gt; 1}">
+				<gel:serialize var="${runresult}" fileName="${XOGwebFolder}/XOGREAD_Result_Rateio_${vRate_Code}.xml"/>
+				<gel:log level="debug" message="XOG Output can be found at: ${XOGwebPath}/XOGREAD_Result_Rateio_${vRate_Code}.xml"/> 
+			</core:if>
+
+			<gel:set asString="true" select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/XOGOutput/Status/@state" var="XOGoutcome"/>
+			<core:switch on="${XOGoutcome}">
+				<core:case value="SUCCESS">
+					<gel:set asString="false" select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/XOGOutput/Statistics/@totalNumberOfRecords" var="totalNumberOfRecords"/>
+					<core:if test="${DebugLevel &gt; 0}">
+						<core:set var="vMessage" value="Instances XOGed-out this request ${totalNumberOfRecords}"/>
+						<gel:log level="debug" message="${vMessage}"/>
+					</core:if>
+				</core:case>
+				<core:case value="FAILURE">
+					<gel:set asString="false" select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/XOGOutput/Statistics" var="Stats"/>
+					<gel:set asString="false" select="$Stats/@totalNumberOfRecords" var="totalNumberOfRecords"/>
+					<gel:set asString="false" select="$Stats/@failureRecords" var="failureRecords"/>
+					<core:if test="${DebugLevel &gt; 0}">
+						<core:set var="vMessage" value="XOG failed.  Out of ${totalNumberOfRecords} records, ${failureRecords} failed."/>
+						<gel:log level="debug" message="${vMessage}"/>
+					</core:if>
+				</core:case>
+			</core:switch>
+
+			<!-- Change Object Code -->
+			<gel:forEach select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/customObjectInstances" var="vCustomInstances">
+				<gel:set select="$vCustomInstances/@objectCode" value="itau_regra_rateio_pj"/>
+			</gel:forEach>
+
+			<!-- Change Instance Code, Project, Partition, Security -->
+			<gel:forEach select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/customObjectInstances/instance" var="vInstance">
+				<gel:set select="$vInstance/@instanceCode" value="PRJ${vRate_Code}"/>
+				<gel:set select="$vInstance/@objectCode" value="itau_regra_rateio_pj"/>
+				<gel:set select="$vInstance/@parentInstanceCode" value="${vProj_Code}"/>
+				<gel:set select="$vInstance/@parentObjectCode" value="project"/>
+			</gel:forEach>
+			<gel:forEach select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/customObjectInstances/instance/CustomInformation/ColumnValue" var="vCustomInfo">
+				<gel:set var="vColumnName" select="$vCustomInfo/@name" asString="true"/>
+				<core:if test="${vColumnName=='code'}">
+					<gel:set select="$vCustomInfo/text()" value="PRJ${vRate_Code}"/>
+				</core:if>
+				<core:if test="${vColumnName=='partition_code'}">
+					<gel:set select="$vCustomInfo/text()" value="${vProj_Part}"/>
+				</core:if>
+				<core:if test="${vColumnName=='odf_parent_id'}">
+					<gel:set select="$vCustomInfo/text()" value=""/>
+				</core:if>
+				<core:if test="${vColumnName=='odf_cncrt_parent_id'}">
+					<gel:set select="$vCustomInfo/text()" value=""/>
+				</core:if>
+			</gel:forEach>
+			<gel:forEach select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/customObjectInstances/instance/Security/UserSecurity" var="vUserSec">
+				<gel:set var="vRightCode" select="$vUserSec/@rightCode" asString="true"/>
+				<gel:set select="$vUserSec/@rightCode" value="odf_cst_itau_regra_rateio_pj_edit"/>
+			</gel:forEach>
+				
+			<gel:set select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus" var="v_rateio_write"/>			
+			<core:if test="${DebugLevel &gt; 1}">
+				<gel:serialize var="${v_rateio_write}" fileName="${XOGwebFolder}/XOGWRITE_Rateio_PRJ${vRate_Code}.xml"/>
+				<gel:log level="debug" message="XOG Output can be found at: ${XOGwebPath}/XOGWRITE_Rateio_PRJ${vRate_Code}.xml"/> 
+			</core:if>
+			
+			<!-- Calling XOG-->
+			<core:catch var="v_xog_exception">
+				<soap:invoke endpoint="${XOGURL}/niku/xog" var="runresult">
+					<soap:message>
+						<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xog="http://www.niku.com/xog">
+							<soapenv:Header>
+								<xog:Auth>
+									<xog:SessionID>${sessionID}</xog:SessionID>
+								</xog:Auth>
+							</soapenv:Header>
+							<soapenv:Body>
+								<gel:include select="$v_rateio_write"/>
+							</soapenv:Body>
+						</soapenv:Envelope>
+					</soap:message>
+				</soap:invoke>
+			</core:catch>
+
+			<core:if test="${v_xog_exception != null}">
+				<gel:log level="warning" message="Caught Exception: ${v_xog_exception}."/>
+				<core:set var="exitClause" value="1"/>
+			</core:if>
+	  
+			<core:if test="${v_xog_exception == null}">
+				<core:if test="${DebugLevel &gt; 1}">
+					<gel:serialize var="${runresult}" fileName="${XOGwebFolder}/XOGWRITE_Result_Rate_PRJ${vRate_Code}.xml"/>
+					<gel:log level="debug" message="XOG Output can be found at: ${XOGwebPath}/XOGWRITE_Result_Rate_PRJ${vRate_Code}.xml"/> 
+				</core:if>
+
+				<gel:set asString="true" select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/XOGOutput/Status/@state" var="XOGoutcome"/>
+				<core:switch on="${XOGoutcome}">
+					<core:case value="SUCCESS">
+						<gel:set asString="false" select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/XOGOutput/Statistics/@totalNumberOfRecords" var="totalNumberOfRecords"/>
+						<core:if test="${DebugLevel &gt; 0}">
+							<core:set var="vMessage" value="Instances XOGed-out this request ${totalNumberOfRecords}"/>
+							<gel:log level="debug" message="${vMessage}"/>
+						</core:if>
+					</core:case>
+					<core:case value="FAILURE">
+						<gel:set asString="false" select="$runresult/soapenv:Envelope/soapenv:Body/NikuDataBus/XOGOutput/Statistics" var="Stats"/>
+						<gel:set asString="false" select="$Stats/@totalNumberOfRecords" var="totalNumberOfRecords"/>
+						<gel:set asString="false" select="$Stats/@failureRecords" var="failureRecords"/>
+						<core:if test="${DebugLevel &gt; 0}">
+							<core:set var="vMessage" value="XOG failed.  Out of ${totalNumberOfRecords} records, ${failureRecords} failed."/>
+							<gel:log level="debug" message="${vMessage}"/>
+						</core:if>
+					</core:case>
+				</core:switch>
+			</core:if>
+		</core:if>
+    </core:forEach>
+</gel:script>
+
